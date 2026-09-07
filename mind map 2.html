@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Mind Map - Interactive Knowledge Graph</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f0f23 0%, #1a1a3e 50%, #2d1b69 100%);
+            overflow: hidden;
+            color: white;
+        }
+        
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        #controls {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+        
+        #controls h2 {
+            margin-bottom: 15px;
+            color: #00ff88;
+            text-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
+        }
+        
+        .control-group {
+            margin-bottom: 15px;
+        }
+        
+        .control-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 12px;
+            color: #ccc;
+        }
+        
+        button {
+            background: linear-gradient(45deg, #ff6b6b, #4ecdc4);
+            border: none;
+            padding: 10px 15px;
+            border-radius: 8px;
+            color: white;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            margin: 5px;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(255, 107, 107, 0.3);
+        }
+        
+        input[type="range"] {
+            width: 150px;
+            margin: 5px 0;
+        }
+        
+        #info {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            max-width: 300px;
+        }
+        
+        #nodeInfo {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.9);
+            padding: 20px;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            min-width: 250px;
+            display: none;
+        }
+        
+        .node-title {
+            color: #00ff88;
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            text-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
+        }
+        
+        .node-description {
+            color: #ccc;
+            line-height: 1.4;
+            margin-bottom: 10px;
+        }
+        
+        .node-connections {
+            font-size: 12px;
+            color: #888;
+        }
+        
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 18px;
+            color: #00ff88;
+            text-shadow: 0 0 20px rgba(0, 255, 136, 0.8);
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 0.5; }
+            50% { opacity: 1; }
+            100% { opacity: 0.5; }
+        }
+        
+        .loading {
+            animation: pulse 2s infinite;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div class="loading" id="loading">Loading 3D Mind Map...</div>
+        
+        <div id="controls">
+            <h2>🧠 Mind Map Controls</h2>
+            <div class="control-group">
+                <button onclick="addRandomNode()">Add Node</button>
+                <button onclick="resetView()">Reset View</button>
+                <button onclick="toggleAnimation()">Toggle Animation</button>
+            </div>
+            <div class="control-group">
+                <label>Node Size</label>
+                <input type="range" id="nodeSize" min="0.5" max="3" step="0.1" value="1" onchange="updateNodeSize(this.value)">
+            </div>
+            <div class="control-group">
+                <label>Animation Speed</label>
+                <input type="range" id="animSpeed" min="0.1" max="2" step="0.1" value="1" onchange="updateAnimSpeed(this.value)">
+            </div>
+            <div class="control-group">
+                <button onclick="expandAll()">Expand All</button>
+                <button onclick="collapseAll()">Collapse All</button>
+            </div>
+        </div>
+        
+        <div id="info">
+            <strong>Navigation:</strong><br>
+            • Click + Drag: Rotate view<br>
+            • Scroll: Zoom in/out<br>
+            • Click nodes: Select/expand<br>
+            • Double-click: Focus on node
+        </div>
+        
+        <div id="nodeInfo">
+            <div class="node-title" id="selectedNodeTitle">Node Title</div>
+            <div class="node-description" id="selectedNodeDesc">Node description...</div>
+            <div class="node-connections" id="selectedNodeConnections">Connections: 0</div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Knowledge Graph Data Structure
+        const knowledgeGraph = {
+            nodes: new Map(),
+            edges: new Set(),
+            selectedNode: null,
+            animationEnabled: true,
+            nodeSize: 1,
+            animSpeed: 1
+        };
+
+        // Sample knowledge data
+        const sampleData = [
+            { id: 'ai', title: 'Artificial Intelligence', desc: 'The simulation of human intelligence in machines', color: '#ff6b6b', connections: ['ml', 'nlp', 'cv'] },
+            { id: 'ml', title: 'Machine Learning', desc: 'Algorithms that improve through experience', color: '#4ecdc4', connections: ['ai', 'dl', 'data'] },
+            { id: 'dl', title: 'Deep Learning', desc: 'Neural networks with multiple layers', color: '#45b7d1', connections: ['ml', 'nn', 'cv'] },
+            { id: 'nn', title: 'Neural Networks', desc: 'Computing systems inspired by biological neural networks', color: '#f9ca24', connections: ['dl', 'ai'] },
+            { id: 'nlp', title: 'Natural Language Processing', desc: 'Interaction between computers and human language', color: '#6c5ce7', connections: ['ai', 'text'] },
+            { id: 'cv', title: 'Computer Vision', desc: 'Machines interpret and understand visual information', color: '#fd79a8', connections: ['ai', 'dl', 'image'] },
+            { id: 'data', title: 'Data Science', desc: 'Extract insights from structured and unstructured data', color: '#00b894', connections: ['ml', 'stats'] },
+            { id: 'stats', title: 'Statistics', desc: 'Collection, analysis, and interpretation of data', color: '#e17055', connections: ['data', 'math'] },
+            { id: 'math', title: 'Mathematics', desc: 'The abstract science of number, quantity, and space', color: '#81ecec', connections: ['stats', 'algo'] },
+            { id: 'algo', title: 'Algorithms', desc: 'Step-by-step procedures for calculations', color: '#fab1a0', connections: ['math', 'cs'] },
+            { id: 'cs', title: 'Computer Science', desc: 'The study of computation and computer systems', color: '#a29bfe', connections: ['algo', 'prog'] },
+            { id: 'prog', title: 'Programming', desc: 'The process of creating computer programs', color: '#fd63a3', connections: ['cs', 'soft'] },
+            { id: 'soft', title: 'Software Engineering', desc: 'Systematic approach to software development', color: '#00cec9', connections: ['prog'] },
+            { id: 'text', title: 'Text Processing', desc: 'Manipulation and analysis of textual data', color: '#ff7675', connections: ['nlp'] },
+            { id: 'image', title: 'Image Processing', desc: 'Digital manipulation of images', color: '#74b9ff', connections: ['cv'] }
+        ];
+
+        // Three.js setup
+        let scene, camera, renderer, controls;
+        let nodeObjects = new Map();
+        let edgeObjects = new Set();
+        let raycaster, mouse;
+        let animationId;
+
+        function init() {
+            // Scene setup
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0a0a1a);
+            
+            // Camera setup
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 0, 20);
+            
+            // Renderer setup
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            document.getElementById('container').appendChild(renderer.domElement);
+            
+            // Lighting
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.4);
+            scene.add(ambientLight);
+            
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(10, 10, 5);
+            directionalLight.castShadow = true;
+            scene.add(directionalLight);
+            
+            // Point lights for atmospheric effect
+            const pointLight1 = new THREE.PointLight(0x00ff88, 1, 100);
+            pointLight1.position.set(20, 20, 20);
+            scene.add(pointLight1);
+            
+            const pointLight2 = new THREE.PointLight(0xff6b6b, 1, 100);
+            pointLight2.position.set(-20, -20, -20);
+            scene.add(pointLight2);
+            
+            // Controls
+            setupControls();
+            
+            // Raycaster for mouse interaction
+            raycaster = new THREE.Raycaster();
+            mouse = new THREE.Vector2();
+            
+            // Event listeners
+            window.addEventListener('resize', onWindowResize);
+            renderer.domElement.addEventListener('click', onMouseClick);
+            renderer.domElement.addEventListener('dblclick', onMouseDoubleClick);
+            renderer.domElement.addEventListener('mousemove', onMouseMove);
+            
+            // Initialize graph
+            initializeGraph();
+            
+            // Hide loading
+            document.getElementById('loading').style.display = 'none';
+            
+            // Start animation
+            animate();
+        }
+
+        function setupControls() {
+            // Simple orbital controls implementation
+            let isMouseDown = false;
+            let mouseX = 0, mouseY = 0;
+            let targetRotationX = 0, targetRotationY = 0;
+            let rotationX = 0, rotationY = 0;
+            
+            renderer.domElement.addEventListener('mousedown', (event) => {
+                isMouseDown = true;
+                mouseX = event.clientX;
+                mouseY = event.clientY;
+            });
+            
+            renderer.domElement.addEventListener('mouseup', () => {
+                isMouseDown = false;
+            });
+            
+            renderer.domElement.addEventListener('mousemove', (event) => {
+                if (isMouseDown) {
+                    targetRotationX = (event.clientY - mouseY) * 0.005;
+                    targetRotationY = (event.clientX - mouseX) * 0.005;
+                    
+                    rotationX += targetRotationX;
+                    rotationY += targetRotationY;
+                    
+                    // Rotate camera around scene
+                    const radius = camera.position.length();
+                    camera.position.x = radius * Math.sin(rotationY) * Math.cos(rotationX);
+                    camera.position.y = radius * Math.sin(rotationX);
+                    camera.position.z = radius * Math.cos(rotationY) * Math.cos(rotationX);
+                    camera.lookAt(0, 0, 0);
+                }
+            });
+            
+            // Zoom with mouse wheel
+            renderer.domElement.addEventListener('wheel', (event) => {
+                const zoomSpeed = 0.1;
+                const direction = event.deltaY > 0 ? 1 : -1;
+                camera.position.multiplyScalar(1 + direction * zoomSpeed);
+            });
+        }
+
+        function initializeGraph() {
+            // Create nodes
+            sampleData.forEach(nodeData => {
+                createNode(nodeData);
+            });
+            
+            // Create connections
+            sampleData.forEach(nodeData => {
+                nodeData.connections.forEach(connectionId => {
+                    if (knowledgeGraph.nodes.has(connectionId)) {
+                        createEdge(nodeData.id, connectionId);
+                    }
+                });
+            });
+            
+            // Position nodes in 3D space
+            positionNodes();
+        }
+
+        function createNode(data) {
+            const node = {
+                id: data.id,
+                title: data.title,
+                description: data.desc,
+                color: data.color,
+                connections: data.connections || [],
+                position: new THREE.Vector3(),
+                expanded: true,
+                mesh: null
+            };
+            
+            // Create 3D mesh
+            const geometry = new THREE.SphereGeometry(1, 32, 32);
+            const material = new THREE.MeshPhongMaterial({ 
+                color: data.color,
+                shininess: 100,
+                transparent: true,
+                opacity: 0.8
+            });
+            
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.userData = { nodeId: data.id };
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            
+            // Add glow effect
+            const glowGeometry = new THREE.SphereGeometry(1.2, 32, 32);
+            const glowMaterial = new THREE.MeshBasicMaterial({
+                color: data.color,
+                transparent: true,
+                opacity: 0.2,
+                side: THREE.BackSide
+            });
+            const glowMesh = new THREE.Mesh(glowGeometry, glowMaterial);
+            mesh.add(glowMesh);
+            
+            // Add text label
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.width = 256;
+            canvas.height = 64;
+            context.fillStyle = '#ffffff';
+            context.font = '20px Arial';
+            context.textAlign = 'center';
+            context.fillText(data.title, 128, 32);
+            
+            const texture = new THREE.CanvasTexture(canvas);
+            const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
+            const sprite = new THREE.Sprite(spriteMaterial);
+            sprite.scale.set(4, 1, 1);
+            sprite.position.set(0, 2, 0);
+            mesh.add(sprite);
+            
+            node.mesh = mesh;
+            scene.add(mesh);
+            nodeObjects.set(data.id, mesh);
+            knowledgeGraph.nodes.set(data.id, node);
+        }
+
+        function createEdge(nodeId1, nodeId2) {
+            const edgeId = `${nodeId1}-${nodeId2}`;
+            if (edgeObjects.has(edgeId)) return;
+            
+            const node1 = knowledgeGraph.nodes.get(nodeId1);
+            const node2 = knowledgeGraph.nodes.get(nodeId2);
+            
+            if (!node1 || !node2) return;
+            
+            const geometry = new THREE.BufferGeometry().setFromPoints([
+                node1.position,
+                node2.position
+            ]);
+            
+            const material = new THREE.LineBasicMaterial({ 
+                color: 0x404040,
+                transparent: true,
+                opacity: 0.6
+            });
+            
+            const line = new THREE.Line(geometry, material);
+            line.userData = { edgeId, nodeId1, nodeId2 };
+            scene.add(line);
+            edgeObjects.add(line);
+        }
+
+        function positionNodes() {
+            const nodes = Array.from(knowledgeGraph.nodes.values());
+            const radius = 8;
+            
+            // Force-directed layout simulation
+            for (let i = 0; i < nodes.length; i++) {
+                const angle = (i / nodes.length) * Math.PI * 2;
+                const height = (Math.random() - 0.5) * 10;
+                
+                nodes[i].position.set(
+                    Math.cos(angle) * radius,
+                    height,
+                    Math.sin(angle) * radius
+                );
+                
+                if (nodes[i].mesh) {
+                    nodes[i].mesh.position.copy(nodes[i].position);
+                }
+            }
+            
+            // Update edge positions
+            edgeObjects.forEach(edge => {
+                const node1 = knowledgeGraph.nodes.get(edge.userData.nodeId1);
+                const node2 = knowledgeGraph.nodes.get(edge.userData.nodeId2);
+                
+                if (node1 && node2) {
+                    edge.geometry.setFromPoints([node1.position, node2.position]);
+                }
+            });
+        }
+
+        function onMouseClick(event) {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(Array.from(nodeObjects.values()));
+            
+            if (intersects.length > 0) {
+                const nodeId = intersects[0].object.userData.nodeId;
+                selectNode(nodeId);
+            }
+        }
+
+        function onMouseDoubleClick(event) {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(Array.from(nodeObjects.values()));
+            
+            if (intersects.length > 0) {
+                const nodeId = intersects[0].object.userData.nodeId;
+                focusOnNode(nodeId);
+            }
+        }
+
+        function onMouseMove(event) {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(Array.from(nodeObjects.values()));
+            
+            // Hover effect
+            nodeObjects.forEach(mesh => {
+                mesh.material.emissive.setHex(0x000000);
+                mesh.scale.set(knowledgeGraph.nodeSize, knowledgeGraph.nodeSize, knowledgeGraph.nodeSize);
+            });
+            
+            if (intersects.length > 0) {
+                const mesh = intersects[0].object;
+                mesh.material.emissive.setHex(0x222222);
+                mesh.scale.set(knowledgeGraph.nodeSize * 1.2, knowledgeGraph.nodeSize * 1.2, knowledgeGraph.nodeSize * 1.2);
+                renderer.domElement.style.cursor = 'pointer';
+            } else {
+                renderer.domElement.style.cursor = 'default';
+            }
+        }
+
+        function selectNode(nodeId) {
+            const node = knowledgeGraph.nodes.get(nodeId);
+            if (!node) return;
+            
+            knowledgeGraph.selectedNode = nodeId;
+            
+            // Update UI
+            document.getElementById('selectedNodeTitle').textContent = node.title;
+            document.getElementById('selectedNodeDesc').textContent = node.description;
+            document.getElementById('selectedNodeConnections').textContent = `Connections: ${node.connections.length}`;
+            document.getElementById('nodeInfo').style.display = 'block';
+            
+            // Highlight connections
+            highlightConnections(nodeId);
+        }
+
+        function highlightConnections(nodeId) {
+            // Reset all edges
+            edgeObjects.forEach(edge => {
+                edge.material.color.setHex(0x404040);
+                edge.material.opacity = 0.6;
+            });
+            
+            // Highlight connected edges
+            edgeObjects.forEach(edge => {
+                if (edge.userData.nodeId1 === nodeId || edge.userData.nodeId2 === nodeId) {
+                    edge.material.color.setHex(0x00ff88);
+                    edge.material.opacity = 1;
+                }
+            });
+        }
+
+        function focusOnNode(nodeId) {
+            const node = knowledgeGraph.nodes.get(nodeId);
+            if (!node) return;
+            
+            // Smoothly move camera to focus on node
+            const targetPosition = node.position.clone();
+            targetPosition.multiplyScalar(1.5);
+            
+            animateCamera(targetPosition);
+        }
+
+        function animateCamera(targetPosition) {
+            const startPosition = camera.position.clone();
+            const duration = 1000;
+            const startTime = Date.now();
+            
+            function updateCamera() {
+                const elapsed = Date.now() - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                
+                camera.position.lerpVectors(startPosition, targetPosition, progress);
+                camera.lookAt(0, 0, 0);
+                
+                if (progress < 1) {
+                    requestAnimationFrame(updateCamera);
+                }
+            }
+            
+            updateCamera();
+        }
+
+        function animate() {
+            animationId = requestAnimationFrame(animate);
+            
+            if (knowledgeGraph.animationEnabled) {
+                // Rotate nodes
+                nodeObjects.forEach((mesh, nodeId) => {
+                    mesh.rotation.y += 0.01 * knowledgeGraph.animSpeed;
+                });
+                
+                // Animate lighting
+                const time = Date.now() * 0.001;
+                scene.children.forEach(child => {
+                    if (child.type === 'PointLight') {
+                        child.position.y = Math.sin(time) * 5;
+                    }
+                });
+            }
+            
+            renderer.render(scene, camera);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // Control functions
+        function addRandomNode() {
+            const topics = ['Blockchain', 'IoT', 'Robotics', 'Quantum Computing', 'AR/VR', 'Cybersecurity'];
+            const colors = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c'];
+            
+            const id = 'node_' + Date.now();
+            const title = topics[Math.floor(Math.random() * topics.length)];
+            const color = colors[Math.floor(Math.random() * colors.length)];
+            
+            const nodeData = {
+                id: id,
+                title: title,
+                desc: `Exploring ${title} and its applications`,
+                color: color,
+                connections: []
+            };
+            
+            // Connect to random existing nodes
+            const existingNodes = Array.from(knowledgeGraph.nodes.keys());
+            const numConnections = Math.floor(Math.random() * 3) + 1;
+            
+            for (let i = 0; i < numConnections && i < existingNodes.length; i++) {
+                const randomNode = existingNodes[Math.floor(Math.random() * existingNodes.length)];
+                if (!nodeData.connections.includes(randomNode)) {
+                    nodeData.connections.push(randomNode);
+                }
+            }
+            
+            createNode(nodeData);
+            
+            // Create edges
+            nodeData.connections.forEach(connectionId => {
+                createEdge(id, connectionId);
+            });
+            
+            positionNodes();
+        }
+
+        function resetView() {
+            camera.position.set(0, 0, 20);
+            camera.lookAt(0, 0, 0);
+            document.getElementById('nodeInfo').style.display = 'none';
+            knowledgeGraph.selectedNode = null;
+            
+            // Reset edge colors
+            edgeObjects.forEach(edge => {
+                edge.material.color.setHex(0x404040);
+                edge.material.opacity = 0.6;
+            });
+        }
+
+        function toggleAnimation() {
+            knowledgeGraph.animationEnabled = !knowledgeGraph.animationEnabled;
+        }
+
+        function updateNodeSize(value) {
+            knowledgeGraph.nodeSize = parseFloat(value);
+            nodeObjects.forEach(mesh => {
+                mesh.scale.set(knowledgeGraph.nodeSize, knowledgeGraph.nodeSize, knowledgeGraph.nodeSize);
+            });
+        }
+
+        function updateAnimSpeed(value) {
+            knowledgeGraph.animSpeed = parseFloat(value);
+        }
+
+        function expandAll() {
+            knowledgeGraph.nodes.forEach(node => {
+                node.expanded = true;
+                if (node.mesh) {
+                    node.mesh.visible = true;
+                }
+            });
+            
+            edgeObjects.forEach(edge => {
+                edge.visible = true;
+            });
+        }
+
+        function collapseAll() {
+            if (knowledgeGraph.selectedNode) {
+                knowledgeGraph.nodes.forEach((node, nodeId) => {
+                    if (nodeId !== knowledgeGraph.selectedNode) {
+                        node.expanded = false;
+                        if (node.mesh) {
+                            node.mesh.visible = false;
+                        }
+                    }
+                });
+                
+                edgeObjects.forEach(edge => {
+                    if (edge.userData.nodeId1 !== knowledgeGraph.selectedNode && 
+                        edge.userData.nodeId2 !== knowledgeGraph.selectedNode) {
+                        edge.visible = false;
+                    }
+                });
+            }
+        }
+
+        // Initialize the application
+        init();
+    </script>
+</body>
+</html>
